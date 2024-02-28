@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Inpainting</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f7f7f7;
+        }
+
+        #container {
+            height:80%;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            width: 90%;
+            max-width: 1200px;
+            margin: auto;
+            border: 1px solid #e0e0e0;
+            padding: 2rem;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            gap: 2rem;
+        }
+
+        #left-side, #right-side {
+            flex: 1; 
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            min-width: 300px;
+        }
+
+        h2 {
+            color: #333;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        #upload-section, #rendered-image-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #image-upload {
+            margin-bottom: 1rem;
+        }
+
+        #mask-canvas, #rendered-image {
+            border: 2px dashed #ccc;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #prompt-input {
+            font-size: 1rem;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: calc(100% - 1rem);
+            margin-bottom: 1rem;
+        }
+
+        #submit-button {
+            margin-top: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 4px;
+            background-color: #5c6bc0;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #submit-button:hover {
+            background-color: #3949ab;
+        }
+
+        #mask-canvas, #image-upload {
+            box-sizing: border-box;
+        }
+
+        #prompt-input, #submit-button {
+            width: 100%; 
+            box-sizing: border-box; 
+        }
+
+        @media (max-width: 768px) {
+            #container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            #left-side, #right-side {
+                width: 100%;
+            }
+        }
+
+        #loading-indicator {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(0,0,0,.3);
+            border-radius: 50%;
+            border-top-color: #5c6bc0;
+            animation: spin 1s ease-in-out infinite;
+            -webkit-animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {transform: rotate(360deg);}
+        }
+
+        @-webkit-keyframes spin {
+            to {-webkit-transform: rotate(360deg);}
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="left-side">
+            <h2>Upload and Mask Image</h2>
+            <div id="upload-section">
+                <input type="file" id="image-upload" accept="image/*">
+                <canvas id="mask-canvas"></canvas>
+                <input type="text" id="prompt-input" placeholder="Enter prompt here">
+                <div style="text-align: center;">
+                    <button id="submit-button">Submit</button>
+                </div>
+            </div>
+        </div>
+        <div id="right-side">
+            <h2 style="margin-bottom: 30px;">Generated Image</h2>
+            <div id="loading-indicator" style="display: none;"></div>
+            <img id="rendered-image" style="display: none;" src="" alt="Rendered image will appear here">
+        </div>
+    </div>
+</body>
+<script>
+window.onload = function() {
+    const imageUpload = document.getElementById('image-upload');
+    const maskCanvas = document.getElementById('mask-canvas');
+    const ctx = maskCanvas.getContext('2d');
+    const hiddenCanvas = document.createElement('canvas');
+    const hiddenCtx = hiddenCanvas.getContext('2d');
+    let isDrawing = false;
+
+    imageUpload.addEventListener('change', function(e) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                const maxDimension = 512;
+                maskCanvas.width = Math.min(img.naturalWidth, maxDimension);
+                maskCanvas.height = Math.min(img.naturalHeight, maxDimension);
+                hiddenCanvas.width = Math.min(img.naturalWidth, maxDimension);
+                hiddenCanvas.height = Math.min(img.naturalHeight, maxDimension);
+
+                ctx.drawImage(img, 0, 0, maskCanvas.width, maskCanvas.height);
+                hiddenCtx.fillStyle = 'black';
+                hiddenCtx.fillRect(0, 0, hiddenCanvas.width, hiddenCanvas.height);
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(e.target.files[0]);
+    });
+
+    maskCanvas.addEventListener('mousedown', function(e) {
+        const rect = maskCanvas.getBoundingClientRect();
+        const scaleX = maskCanvas.width / rect.width;
+        const scaleY = maskCanvas.height / rect.height;
+
+        isDrawing = true;
+        hiddenCtx.beginPath();
+        hiddenCtx.moveTo(e.offsetX * scaleX, e.offsetY * scaleY);
+    });
+
+    maskCanvas.addEventListener('mousemove', function(e) {
+    if (isDrawing === true) {
+        const rect = maskCanvas.getBoundingClientRect();
+        const scaleX = maskCanvas.width / rect.width;
+        const scaleY = maskCanvas.height / rect.height;
+
+        hiddenCtx.lineWidth = 25;
+        hiddenCtx.lineJoin = 'round';
+        hiddenCtx.lineCap = 'round';
+        hiddenCtx.strokeStyle = 'white';
+
+        hiddenCtx.lineTo(e.offsetX * scaleX, e.offsetY * scaleY);
+        hiddenCtx.stroke();
+       
+        ctx.lineWidth = 25; 
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'white'; 
+
+        ctx.beginPath();
+        ctx.moveTo(e.offsetX * scaleX, e.offsetY * scaleY);
+        ctx.lineTo(e.offsetX * scaleX, e.offsetY * scaleY);
+        ctx.stroke();
+        ctx.closePath();
+        const maskDataURL = hiddenCanvas.toDataURL('image/png');
+        const renderedImage = document.getElementById('rendered-image');
+        renderedImage.src = maskDataURL;
+        renderedImage.style.display = 'block'
+        renderedImage.style.width = maskCanvas.width + 'px';
+        renderedImage.style.height = maskCanvas.height + 'px';
+      }
+    });
+
+
+    maskCanvas.addEventListener('mouseup', function(e) {
+        if (isDrawing === true) {
+            isDrawing = false;
+            hiddenCtx.closePath();
+        }
+    });
+
+    maskCanvas.addEventListener('mouseout', function(e) {
+        if (isDrawing === true) {
+            isDrawing = false;
+            hiddenCtx.closePath();
+        }
+    });
+
+    const submitButton = document.getElementById('submit-button');
+    submitButton.addEventListener('click', async function() {
+        const formData = new FormData();
+        const imageFile = document.getElementById('image-upload').files[0];
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const renderedImage = document.getElementById('rendered-image');
+        const prompt = document.getElementById('prompt-input').value;
+        renderedImage.style.display = 'none';
+
+        const maskBlob = await new Promise(resolve => {
+            hiddenCanvas.toBlob(resolve, 'image/png');
+        });
+
+        formData.append('image', imageFile);
+        formData.append('mask', maskBlob);
+        formData.append('prompt', prompt);
+
+        loadingIndicator.style.display = 'block';
+
+        const response = await fetch('/image', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            renderedImage.src = url;
+            renderedImage.onload = function() {
+                renderedImage.style.display = 'block';
+                loadingIndicator.style.display = 'none'; 
+            }
+        } else {
+            console.error('Image processing failed:', response.statusText);
+        }
+    });
+}
+</script>
+</html>
